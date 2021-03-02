@@ -2,6 +2,8 @@ import './index.css'
 import { Vector2, Point2 } from './math';
 import { Grid } from './grid';
 
+const CELL_SIZE: number = 50;
+
 interface State {
     canvas: HTMLCanvasElement,
     context: CanvasRenderingContext2D,
@@ -10,18 +12,54 @@ interface State {
     mouse_pos: Point2,
     mouse_down: boolean,
     camera_pos: Point2,
+    grid: Grid,
+    stores: Store[],
 }
 
+class Store {
+    pos: Point2;
 
-function render({ canvas, camera_pos, context, tick, window_dims, mouse_pos, mouse_down }: State) {
+    constructor(pos: Point2) {
+        this.pos = pos;
+    }
 
-    let grid = new Grid(30, 30, 50);
-    grid.render(context);
+    render(context: CanvasRenderingContext2D) {
+        context.save();
+        context.fillStyle = "rgba(200, 255, 100, 1.0)";
+        context.fillRect(this.pos.x, this.pos.y, CELL_SIZE, CELL_SIZE);
+        context.restore();
+    }
+}
 
-    context.beginPath();
-    context.arc(mouse_pos.x, mouse_pos.y, 50, 0, 2 * Math.PI);
-    context.strokeStyle = mouse_down ? 'blue' : 'black';
-    context.stroke();
+function render(state: State) {
+    const { context } = state;
+
+    state.grid.render(context);
+
+    // find closest grid position by transforming into grid cell space, flooring and transforming back.
+    const cell_pos = state.mouse_pos.to_vector()
+    .add(new Vector2(
+        state.grid.cols,
+        state.grid.rows,
+    ).mul(state.grid.size * 0.5))
+    .mul(1.0/state.grid.size)
+    .floor()
+    .mul(state.grid.size)
+    .add(new Vector2(
+        state.grid.cols,
+        state.grid.rows,
+    ).mul(state.grid.size * -0.5))
+    .to_point();
+
+    context.save();
+    context.fillStyle = "rgba(200, 255, 100, 0.5)";
+    context.fillRect(cell_pos.x, cell_pos.y, CELL_SIZE, CELL_SIZE);
+    context.restore();
+
+    for (const store of state.stores) {
+        store.render(context);
+    }
+
 }
 
 function queryBodyDims(): Vector2 {
@@ -54,6 +92,8 @@ function main() {
         camera_pos: new Point2(0, 0),
         zoom_level: 0.0,
         target_zoom_level: 0.0,
+        grid: new Grid(30, 30, CELL_SIZE),
+        stores: [] as Store[],
     };
  
     window.addEventListener("resize", _ => {
@@ -66,6 +106,38 @@ function main() {
 
     window.addEventListener("mouseup", _ => {
         state.mouse_down = false;
+    });
+
+    canvas.addEventListener("click", _ => {
+        // FIXME: can I not do all of this shit to get the mouse position in world space?
+        state.context.save();
+        state.context.translate(state.window_dims.x * 0.5, state.window_dims.y * 0.5);
+        let zoom_scale = Math.pow(2.0, state.zoom_level);
+        state.context.scale(zoom_scale, zoom_scale);
+        state.context.translate(state.camera_pos.x, state.camera_pos.y);
+        let temp = state.context.getTransform().invertSelf().transformPoint(state.canvas_mouse_pos);
+        const mouse_pos = new Point2(temp.x, temp.y);
+
+        // find closest grid position by transforming into grid cell space, flooring and transforming back.
+        const cell_pos = mouse_pos.to_vector()
+            .add(new Vector2(
+                state.grid.cols,
+                state.grid.rows,
+            ).mul(state.grid.size * 0.5))
+            .mul(1.0/state.grid.size)
+            .floor()
+            .mul(state.grid.size)
+            .add(new Vector2(
+                state.grid.cols,
+                state.grid.rows,
+            ).mul(state.grid.size * -0.5))
+            .to_point();
+
+        state.stores.push(new Store(
+            cell_pos
+        ));
+
+        state.context.restore();
     });
 
     canvas.addEventListener("wheel", event => {
