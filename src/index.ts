@@ -6,9 +6,9 @@ interface State {
     context: CanvasRenderingContext2D,
     tick: number,
     window_dims: Vector2,
-    mouse_pos: Vector2,
+    mouse_pos: Point2,
     mouse_down: boolean,
-    camera_pos: Vector2,
+    camera_pos: Point2,
 }
 
 class Grid {
@@ -99,11 +99,14 @@ function main() {
         context,
         tick: 0,
         window_dims: initialBodyDims,
-        mouse_pos: new Vector2(0, 0),
+        mouse_pos: new Point2(0, 0),
+        canvas_mouse_pos: new Point2(0, 0),
         mouse_down: false,
-        camera_pos: initialBodyDims.mul(0.5),
+        camera_pos: new Point2(0, 0),
+        zoom_level: 0.0,
+        target_zoom_level: 0.0,
     };
-
+ 
     window.addEventListener("resize", _ => {
         state.window_dims = queryBodyDims();
     });
@@ -116,17 +119,24 @@ function main() {
         state.mouse_down = false;
     });
 
+    canvas.addEventListener("wheel", event => {
+        state.target_zoom_level = Math.max(-3, Math.min(3, state.target_zoom_level - event.deltaY / 100));
+    });
+
     window.addEventListener("mousemove", event => {
-        if (state.mouse_down) { 
+        if (state.mouse_down) {
+            
+            let zoom_scale = Math.pow(2.0, -state.zoom_level);
+            console.log(zoom_scale, event);
             state.camera_pos.add_assign(
-                new Vector2(event.movementX, event.movementY)
+                new Vector2(event.movementX, event.movementY).mul(zoom_scale)
             );
         }
 
-        state.mouse_pos = new Vector2(
+        state.canvas_mouse_pos = new Point2(
             event.clientX,
             event.clientY,
-        ).add(state.camera_pos.mul(-1));
+        );
     });
 
     document.body.appendChild(canvas);
@@ -137,7 +147,17 @@ function main() {
         state.context.clearRect(0, 0, canvas.width, canvas.height);
 
         state.context.save();
+        
+        state.context.translate(state.window_dims.x * 0.5, state.window_dims.y * 0.5);
+
+        state.zoom_level = 0.6 * state.zoom_level + 0.4 * state.target_zoom_level;
+        let zoom_scale = Math.pow(2.0, state.zoom_level);
+        state.context.scale(zoom_scale, zoom_scale);
+
         state.context.translate(state.camera_pos.x, state.camera_pos.y);
+
+        let mouse_pos = state.context.getTransform().invertSelf().transformPoint(state.canvas_mouse_pos);
+        state.mouse_pos = new Point2(mouse_pos.x, mouse_pos.y);
 
         render(state);
 
