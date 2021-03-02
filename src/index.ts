@@ -125,11 +125,9 @@ function main() {
 
     window.addEventListener("mousemove", event => {
         if (state.mouse_down) {
-            
-            let zoom_scale = Math.pow(2.0, -state.zoom_level);
-            console.log(zoom_scale, event);
+            let inv_zoom_scale = Math.pow(2.0, -state.zoom_level);
             state.camera_pos.add_assign(
-                new Vector2(event.movementX, event.movementY).mul(zoom_scale)
+                new Vector2(event.movementX, event.movementY).mul(inv_zoom_scale)
             );
         }
 
