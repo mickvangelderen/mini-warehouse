@@ -12,8 +12,8 @@ export class Grid {
     }
 
     render(context: CanvasRenderingContext2D) {
-        let min = new Vector2(this.cols, this.rows).mul(this.size * -0.5);
-        let max = new Vector2(this.cols, this.rows).mul(this.size * 0.5);
+        let min = new Vector2(0, 0);
+        let max = new Vector2(this.cols, this.rows).mul(this.size);
 
         context.save();
 
