@@ -4,11 +4,27 @@ import { Grid } from './grid';
 
 const CELL_SIZE: number = 50;
 
-enum Tool {
-    None = 0,
-    Store = 1,
-    Track = 2,
+enum ToolKind {
+    None,
+    Store,
+    Track,
 }
+
+interface NoneTool {
+    kind: ToolKind.None
+}
+
+interface StoreTool {
+    kind: ToolKind.Store,
+    start: Point2 | null,
+}
+
+interface TrackTool {
+    kind: ToolKind.Track,
+    start: Point2 | null,
+}
+
+type Tool = NoneTool | StoreTool | TrackTool;
 
 interface State {
     canvas: HTMLCanvasElement,
@@ -24,48 +40,60 @@ interface State {
     tool: Tool,
 }
 
+function render_cell(context: CanvasRenderingContext2D, pos: Point2, fill: string) {
+    context.fillStyle = fill;
+    context.fillRect(pos.x, pos.y, CELL_SIZE, CELL_SIZE);
+
+    context.fillStyle = "black";
+    const cell_pos = pos.to_vector().mul(1.0/CELL_SIZE).floor();
+    const text = `${cell_pos.x}, ${cell_pos.y}`;
+    const text_measure = context.measureText(text);
+    const text_dims = new Vector2(text_measure.actualBoundingBoxRight - text_measure.actualBoundingBoxLeft, text_measure.actualBoundingBoxDescent - text_measure.actualBoundingBoxAscent);
+    const text_pos = pos.to_vector().add(Vector2.from_scalar(CELL_SIZE * 0.5)).add(text_dims.mul(-0.5));
+    context.fillText(text, text_pos.x, text_pos.y);
+}
+
+function render_cell_grid(context: CanvasRenderingContext2D, pos: Point2, dim: Vector2, fill: string) {
+    for (let y = pos.y; y < pos.y + dim.y; y += CELL_SIZE) {
+        for (let x = pos.x; x < pos.x + dim.x; x += CELL_SIZE) {
+            render_cell(context, new Point2(x, y), fill);
+        }
+    }
+}
+
+const STORE_FILL = "rgba(200, 255, 100, 1.0)";
+const STORE_GHOST_FILL = "rgba(200, 255, 100, 0.5)";
+const TRACK_FILL = "rgba(100, 200, 255, 1.0)";
+const TRACK_GHOST_FILL = "rgba(100, 200, 255, 0.5)";
+
 class Store {
     pos: Point2;
+    dim: Vector2;
 
-    constructor(pos: Point2) {
+    constructor(pos: Point2, dim: Vector2) {
         this.pos = pos;
+        this.dim = dim;
     }
 
     render(context: CanvasRenderingContext2D) {
         context.save();
-        context.fillStyle = "rgba(100, 200, 255, 1.0)";
-        context.fillRect(this.pos.x, this.pos.y, CELL_SIZE, CELL_SIZE);
-
-        context.fillStyle = "black";
-        const cell_pos = this.pos.to_vector().mul(1.0/CELL_SIZE).floor();
-        const text = `${cell_pos.x}, ${cell_pos.y}`;
-        const text_measure = context.measureText(text);
-        const text_dims = new Vector2(text_measure.actualBoundingBoxRight - text_measure.actualBoundingBoxLeft, text_measure.actualBoundingBoxDescent - text_measure.actualBoundingBoxAscent);
-        const text_pos = this.pos.to_vector().add(Vector2.from_scalar(CELL_SIZE * 0.5)).add(text_dims.mul(-0.5));
-        context.fillText(text, text_pos.x, text_pos.y);
+        render_cell_grid(context, this.pos, this.dim, STORE_FILL);
         context.restore();
     }
 }
 
 class Track {
     pos: Point2;
+    dim: Vector2;
 
-    constructor(pos: Point2) {
+    constructor(pos: Point2, dim: Vector2) {
         this.pos = pos;
+        this.dim = dim;
     }
 
     render(context: CanvasRenderingContext2D) {
         context.save();
-        context.fillStyle = "rgba(200, 255, 100, 1.0)";
-        context.fillRect(this.pos.x, this.pos.y, CELL_SIZE, CELL_SIZE);
-
-        context.fillStyle = "black";
-        const cell_pos = this.pos.to_vector().mul(1.0/CELL_SIZE).floor();
-        const text = `${cell_pos.x}, ${cell_pos.y}`;
-        const text_measure = context.measureText(text);
-        const text_dims = new Vector2(text_measure.actualBoundingBoxRight - text_measure.actualBoundingBoxLeft, text_measure.actualBoundingBoxDescent - text_measure.actualBoundingBoxAscent);
-        const text_pos = this.pos.to_vector().add(Vector2.from_scalar(CELL_SIZE * 0.5)).add(text_dims.mul(-0.5));
-        context.fillText(text, text_pos.x, text_pos.y);
+        render_cell_grid(context, this.pos, this.dim, TRACK_FILL);
         context.restore();
     }
 }
@@ -75,27 +103,77 @@ function render(state: State) {
 
     state.grid.render(context);
 
-    // find closest grid position by transforming into grid cell space, flooring and transforming back.
-    const cell_pos = state.mouse_pos.to_vector()
-    .mul(1.0/state.grid.size)
-    .floor()
-    .mul(state.grid.size)
-    .to_point();
-
-    if (state.tool !== Tool.None) {
-        context.save();
-        context.fillStyle = state.tool === Tool.Track ? "rgba(200, 255, 100, 0.5)"
-            : "rgba(100, 200, 255, 0.5)";
-        context.fillRect(cell_pos.x, cell_pos.y, CELL_SIZE, CELL_SIZE);
-        context.restore();
-    }
-
     for (const store of state.stores) {
         store.render(context);
     }
 
     for (const track of state.tracks) {
         track.render(context);
+    }
+
+    if (state.tool.kind === ToolKind.Store) {
+        if (state.tool.start == null) {
+            context.save();
+            let pos = state.mouse_pos.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE);
+            context.fillStyle = STORE_GHOST_FILL;
+            context.fillRect(pos.x, pos.y, CELL_SIZE, CELL_SIZE);
+            context.restore();
+        } else {
+            let a = state.tool.start.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE);
+            let b = state.mouse_pos.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE);
+            
+            let start = new Point2(
+                Math.min(a.x, b.x),
+                Math.min(a.y, b.y),
+            );
+
+            let end = new Point2(
+                Math.max(a.x, b.x),
+                Math.max(a.y, b.y),
+            );
+
+            let dim = end.sub(start).add(Vector2.from_scalar(CELL_SIZE));
+
+            context.save();
+            render_cell_grid(context, start, dim, STORE_GHOST_FILL);
+            context.restore();
+        }
+    }
+
+    if (state.tool.kind === ToolKind.Track) {
+        if (state.tool.start == null) {
+            context.save();
+            let pos = state.mouse_pos.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE);
+            context.fillStyle = TRACK_GHOST_FILL;
+            context.fillRect(pos.x, pos.y, CELL_SIZE, CELL_SIZE);
+            context.restore();
+        } else {
+            let a = state.tool.start.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE).to_point();
+            let b = state.mouse_pos.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE).to_point();
+            let d = b.sub(a);
+
+            if (Math.abs(d.x) >= Math.abs(d.y)) {
+                b.y = a.y;
+            } else {
+                b.x = a.x;
+            }
+
+            let start = new Point2(
+                Math.min(a.x, b.x),
+                Math.min(a.y, b.y),
+            );
+
+            let end = new Point2(
+                Math.max(a.x, b.x),
+                Math.max(a.y, b.y),
+            );
+
+            let dim = end.sub(start).add(Vector2.from_scalar(CELL_SIZE));
+
+            context.save();
+            render_cell_grid(context, start, dim, TRACK_GHOST_FILL);
+            context.restore();
+        }
     }
 }
 
@@ -132,10 +210,10 @@ function main() {
         grid,
         stores: [] as Store[],
         tracks: [] as Track[],
-        tool: Tool.None,
+        tool: { kind: ToolKind.None } as Tool,
     };
  
-    canvas.style.cursor = toolToCursor(state.tool);
+    canvas.style.cursor = toolToCursor(state.tool.kind);
 
     window.addEventListener("resize", _ => {
         state.window_dims = queryBodyDims();
@@ -162,23 +240,71 @@ function main() {
     }
 
     canvas.addEventListener("click", _ => {
-        if (state.tool == Tool.None) return;
+        if (state.tool.kind == ToolKind.None) return;
 
         // find closest grid position by transforming into grid cell space, flooring and transforming back.
-        const cell_pos = state.mouse_pos.to_vector()
+        const mouse_pos_grid = state.mouse_pos.to_vector()
             .mul(1.0/state.grid.size)
             .floor()
             .mul(state.grid.size)
             .to_point();
 
-        if (state.tool == Tool.Track) {
-            state.tracks.push(new Track(
-                cell_pos
-            ));
-        } else if (state.tool == Tool.Store) {
-            state.stores.push(new Store(
-                cell_pos
-            ));
+        if (state.tool.kind == ToolKind.Track) {
+            if (state.tool.start == null) {
+                state.tool.start = mouse_pos_grid;
+            } else {
+                let a = state.tool.start.to_vector().mul(1.0/CELL_SIZE).floor().mul(CELL_SIZE).to_point();
+                let b = mouse_pos_grid;
+                let d = b.sub(a);
+
+                if (Math.abs(d.x) >= Math.abs(d.y)) {
+                    b.y = a.y;
+                } else {
+                    b.x = a.x;
+                }
+                
+                let start = new Point2(
+                    Math.min(a.x, b.x),
+                    Math.min(a.y, b.y),
+                );
+
+                let end = new Point2(
+                    Math.max(a.x, b.x),
+                    Math.max(a.y, b.y),
+                );
+
+                let dim = end.sub(start).add(Vector2.from_scalar(CELL_SIZE));
+
+                state.stores.push(new Track(
+                    start,
+                    dim,
+                ));
+
+                state.tool.start = null;
+            }
+        } else if (state.tool.kind == ToolKind.Store) {
+            if (state.tool.start == null) {
+                state.tool.start = mouse_pos_grid;
+            } else {
+                let start = new Point2(
+                    Math.min(state.tool.start.x, mouse_pos_grid.x),
+                    Math.min(state.tool.start.y, mouse_pos_grid.y),
+                );
+                123
+                let end = new Point2(
+                    Math.max(state.tool.start.x, mouse_pos_grid.x),
+                    Math.max(state.tool.start.y, mouse_pos_grid.y),
+                );
+
+                let dim = end.sub(start).add(Vector2.from_scalar(CELL_SIZE));
+
+                state.stores.push(new Store(
+                    start,
+                    dim,
+                ));
+
+                state.tool.start = null;
+            }
         }
     });
 
@@ -187,7 +313,7 @@ function main() {
     });
 
     window.addEventListener("mousemove", event => {
-        if (state.mouse_down_pos !== null && state.tool == Tool.None) {
+        if (state.mouse_down_pos !== null && state.tool.kind == ToolKind.None) {
             let inv_zoom_scale = Math.pow(2.0, -state.zoom_level);
             state.camera_pos.add_assign(
                 new Vector2(event.movementX, event.movementY).mul(-inv_zoom_scale)
@@ -197,25 +323,30 @@ function main() {
         state.mouse_pos = canvas_to_world(new Point2(event.clientX, event.clientY));
     });
 
-    function toolToCursor(tool: Tool) {
+    function toolToCursor(tool: ToolKind) {
         switch (tool) {
-            case Tool.None: return "move";
+            case ToolKind.None: return "move";
             default: return "default";
         }
     }
 
-    function switchTool(state: State, tool: Tool) {
-        state.tool = state.tool == tool ? Tool.None : tool;
-        canvas.style.cursor = toolToCursor(state.tool);
+    function switchTool(state: State, tool: ToolKind) {
+        state.tool.kind = state.tool.kind == tool ? ToolKind.None : tool;
+        canvas.style.cursor = toolToCursor(state.tool.kind);
     }
 
     window.addEventListener("keydown", event => {
         switch (event.code) {
             case "Digit1":
-                switchTool(state, Tool.Track);
+                switchTool(state, ToolKind.Track);
                 break;
             case "Digit2":
-                switchTool(state, Tool.Store);
+                switchTool(state, ToolKind.Store);
+                break;
+            case "Escape":
+                if (state.tool.kind === ToolKind.Store || state.tool.kind === ToolKind.Track) {
+                    state.tool.start = null;
+                }
                 break;
         }
     });

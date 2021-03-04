@@ -66,6 +66,13 @@ export class Point2 {
         this.y = y;
     }
 
+    sub(p: Point2): Vector2 {
+        return new Vector2(
+            this.x - p.x,
+            this.y - p.y,
+        );
+    }
+    
     add(v: Vector2): Point2 {
         return new Point2(
             this.x + v.x,
